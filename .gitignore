@@ -1,0 +1,8 @@
+data/
+*.duckdb
+*.duckdb.tmp/
+*.duckdb.wal
+*_log.txt
+headers_op.json
+__pycache__/
+.venv/

@@ -1,0 +1,42 @@
+# CMS Open Payments bulk sources — June 2026 publication (P06302026_06032026).
+#
+# Current years (2019-2025): per-file CSVs discovered via
+#   https://openpaymentsdata.cms.gov/api/1/metastore/schemas/dataset/items
+# Archived years (2013-2018): frozen ZIPs from the Archived Datasets page
+#   https://openpaymentsdata.cms.gov/datasets/archived
+#   (each year froze at its final January publication; note the 2013-2016
+#   2-digit/.ZIP vs 2017-2018 4-digit/.zip naming; the archived page links a
+#   stale Jan-2025 URL for PY2018 — we use the final Jan-2026 file)
+# Deleted-records files exist per year from PY2016 onward only; PY2013-2015
+# never had them (verified against the ZIP central directories). PY2025 has
+# none yet (first publication).
+# Methodology & data dictionary:
+#   https://www.cms.gov/OpenPayments/Downloads/OpenPaymentsDataDictionary.pdf
+
+publication: P06302026_06032026
+
+archived_zips:
+  2013: https://download.cms.gov/openpayments/PGYR13_P012221.ZIP
+  2014: https://download.cms.gov/openpayments/PGYR14_P012122.ZIP
+  2015: https://download.cms.gov/openpayments/PGYR15_P012023.ZIP
+  2016: https://download.cms.gov/openpayments/PGYR16_P011824.ZIP
+  2017: https://download.cms.gov/openpayments/PGYR2017_P01302025_01212025.zip
+  2018: https://download.cms.gov/openpayments/PGYR2018_P01232026_01102026.zip
+
+current_years: [2019, 2020, 2021, 2022, 2023, 2024, 2025]
+current_url_template: >-
+  https://download.cms.gov/openpayments/PGYR{year}_P06302026_06032026/OP_DTL_{kind}_PGYR{year}_P06302026_06032026.csv
+current_kinds: [GNRL, RSRCH, OWNRSHP]
+
+deleted_records:
+  2016: https://download.cms.gov/openpayments/PGYR16_P011824/OP_REMOVED_DELETED_PGYR2016_P01182024.csv
+  2017: https://download.cms.gov/openpayments/PGYR2017_P01302025_01212025/OP_REMOVED_DELETED_PGYR2017_P01302025_01212025.csv
+  2018: https://download.cms.gov/openpayments/PGYR2018_P01232026_01102026/OP_REMOVED_DELETED_PGYR2018_P01232026_01102026.csv
+  2019: https://download.cms.gov/openpayments/PGYR2019_P06302026_06032026/OP_REMOVED_DELETED_PGYR2019_P06302026_06032026.csv
+  2020: https://download.cms.gov/openpayments/PGYR2020_P06302026_06032026/OP_REMOVED_DELETED_PGYR2020_P06302026_06032026.csv
+  2021: https://download.cms.gov/openpayments/PGYR2021_P06302026_06032026/OP_REMOVED_DELETED_PGYR2021_P06302026_06032026.csv
+  2022: https://download.cms.gov/openpayments/PGYR2022_P06302026_06032026/OP_REMOVED_DELETED_PGYR2022_P06302026_06032026.csv
+  2023: https://download.cms.gov/openpayments/PGYR2023_P06302026_06032026/OP_REMOVED_DELETED_PGYR2023_P06302026_06032026.csv
+  2024: https://download.cms.gov/openpayments/PGYR2024_P06302026_06032026/OP_REMOVED_DELETED_PGYR2024_P06302026_06032026.csv
+
+profile_supplement: https://download.cms.gov/openpayments/PHPRFL_P06302026_06032026/OP_CVRD_RCPNT_PRFL_SPLMTL_P06302026_06032026.csv
