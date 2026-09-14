@@ -287,7 +287,7 @@ def build_columns_table(con):
     con.execute("""
         CREATE TABLE _columns (
             table_name VARCHAR, column_name VARCHAR, data_type VARCHAR,
-            null_pct DOUBLE, example_value VARCHAR
+            null_pct DOUBLE, example_value VARCHAR, join_hint VARCHAR
         )
     """)
     for tbl in TABLE_DESCRIPTIONS:
@@ -307,7 +307,7 @@ def build_columns_table(con):
         for i, (c, dt) in enumerate(cols):
             nulls, example = stats[1 + 2 * i], stats[2 + 2 * i]
             con.execute(
-                "INSERT INTO _columns VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO _columns (table_name, column_name, data_type, null_pct, example_value) VALUES (?, ?, ?, ?, ?)",
                 [tbl, c, dt, round(100.0 * nulls / total, 1),
                  (example or "")[:80]],
             )
