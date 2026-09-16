@@ -23,7 +23,9 @@ def generate_dataset_card(db_path: str) -> str:
     total_rows = int(metadata["row_count"].sum())
 
     return f"""---
-license: mit
+license: other
+license_name: public-domain
+license_link: https://openpaymentsdata.cms.gov/about/terms
 task_categories:
   - tabular-classification
   - tabular-regression
@@ -80,6 +82,8 @@ def main():
     parser.add_argument("--db", type=Path, default=Path("openpayments.duckdb"))
     parser.add_argument("--repo", default="Nason/openpayments-database")
     parser.add_argument("--token", help="HF token (or set HF_TOKEN env var)")
+    parser.add_argument("--card-only", action="store_true",
+                        help="upload only the README card (e.g. after a CHANGELOG or license edit)")
     args = parser.parse_args()
 
     if not args.db.exists():
@@ -96,6 +100,9 @@ def main():
 
     api.upload_file(path_or_fileobj=card.encode(), path_in_repo="README.md",
                     repo_id=args.repo, repo_type="dataset")
+    if args.card_only:
+        print("--card-only: skipping .duckdb upload")
+        return
     size_gb = args.db.stat().st_size / (1024 ** 3)
     print(f"Uploading {args.db} ({size_gb:.1f} GB)...")
     api.upload_file(path_or_fileobj=str(args.db), path_in_repo="openpayments.duckdb",

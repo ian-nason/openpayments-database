@@ -11,6 +11,7 @@ final archive republications), so only PY2013-2015 flow through rename
 rules.
 """
 import argparse
+import os
 import csv
 import re
 import shutil
@@ -133,7 +134,11 @@ def load_detail_tables(con, files, cw):
                 {cols_sql}, source_file VARCHAR
             )
         """)
-        # Idempotent resume: skip program years already loaded.
+        # Resume vs refresh: a program year already in the table is reused only when it was
+        # loaded from this same source file (name, size, mtime recorded in _sources). CMS
+        # re-issues prior years every January and June; a changed file replaces its year.
+        con.execute("CREATE TABLE IF NOT EXISTS _sources (table_name VARCHAR, program_year INTEGER, "
+                    "source_file VARCHAR, size BIGINT, mtime DOUBLE, loaded_at TIMESTAMP)")
         have_years = {
             r[0] for r in con.execute(
                 f"SELECT DISTINCT program_year FROM {table}"
@@ -141,9 +146,17 @@ def load_detail_tables(con, files, cw):
         }
         total = 0
         for year, path in files[kind]:
+            st = path.stat()
+            rec = con.execute(
+                "SELECT source_file, size, mtime FROM _sources WHERE table_name = ? AND program_year = ?",
+                [table, year]).fetchone()
             if year in have_years:
-                print(f"  {table} PY{year}: already loaded, skipping", flush=True)
-                continue
+                if rec and rec[0] == path.name and rec[1] == st.st_size and abs(rec[2] - st.st_mtime) < 1:
+                    print(f"  {table} PY{year}: already loaded from {path.name}, skipping", flush=True)
+                    continue
+                print(f"  {table} PY{year}: source file changed (or unrecorded); reloading", flush=True)
+                con.execute(f"DELETE FROM {table} WHERE program_year = {year}")
+            con.execute("DELETE FROM _sources WHERE table_name = ? AND program_year = ?", [table, year])
             mapping = cw[(table, era_of_year(year))]
             header = con.execute(f"""
                 SELECT * FROM read_csv('{path}', header=true, all_varchar=true,
@@ -179,6 +192,8 @@ def load_detail_tables(con, files, cw):
             n = con.execute(
                 f"SELECT COUNT(*) FROM {table} WHERE program_year = {year}"
             ).fetchone()[0]
+            con.execute("INSERT INTO _sources VALUES (?, ?, ?, ?, ?, now())",
+                        [table, year, path.name, st.st_size, st.st_mtime])
             total += n
             print(f"  {table} PY{year}: {n:,} rows", flush=True)
         counts[table] = total
@@ -400,7 +415,9 @@ def main():
     con = duckdb.connect(str(args.output))
     con.execute("SET preserve_insertion_order = false")
     con.execute(f"SET temp_directory = '{args.output.resolve()}.tmp'")
-    con.execute("SET memory_limit = '8GB'")
+    # DATAPOND_MEMORY_LIMIT / DATAPOND_THREADS override (pandas is outside this limit)
+    con.execute(f"SET memory_limit = '{os.environ.get('DATAPOND_MEMORY_LIMIT', '6GB')}'")
+    con.execute(f"SET threads = {int(os.environ.get('DATAPOND_THREADS', 4))}")
 
     print("\n[2/6] Loading detail tables")
     cw = load_crosswalk()
