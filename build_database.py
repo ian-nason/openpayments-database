@@ -150,13 +150,18 @@ def load_detail_tables(con, files, cw):
             rec = con.execute(
                 "SELECT source_file, size, mtime FROM _sources WHERE table_name = ? AND program_year = ?",
                 [table, year]).fetchone()
-            if year in have_years:
+            replacing = year in have_years
+            if replacing:
                 if rec and rec[0] == path.name and rec[1] == st.st_size and abs(rec[2] - st.st_mtime) < 1:
                     print(f"  {table} PY{year}: already loaded from {path.name}, skipping", flush=True)
                     continue
                 print(f"  {table} PY{year}: source file changed (or unrecorded); reloading", flush=True)
-                con.execute(f"DELETE FROM {table} WHERE program_year = {year}")
-            con.execute("DELETE FROM _sources WHERE table_name = ? AND program_year = ?", [table, year])
+            # The replacement is loaded into a staging table and validated first; the existing
+            # year is swapped out inside one transaction, so a bad or empty source never
+            # removes data that was already there.
+            stage = f"_stage_{table}"
+            con.execute(f"DROP TABLE IF EXISTS {stage}")
+            con.execute(f"CREATE TABLE {stage} AS SELECT * FROM {table} LIMIT 0")
             mapping = cw[(table, era_of_year(year))]
             header = con.execute(f"""
                 SELECT * FROM read_csv('{path}', header=true, all_varchar=true,
@@ -174,7 +179,7 @@ def load_detail_tables(con, files, cw):
                     exprs.append(f'NULL AS "{c}"')
             def insert_sql(extra: str) -> str:
                 return f"""
-                    INSERT INTO {table}
+                    INSERT INTO {stage}
                     SELECT {", ".join(exprs)}, '{path.name}' AS source_file
                     FROM read_csv('{path}', header=true, all_varchar=true,
                                   ignore_errors=true, null_padding=true,
@@ -185,15 +190,26 @@ def load_detail_tables(con, files, cw):
             except duckdb.Error:
                 # The parallel scanner rejects null_padding when the file has
                 # quoted newlines; retry single-threaded (same fix as FEC).
-                con.execute(
-                    f"DELETE FROM {table} WHERE program_year = {year}"
-                )
+                con.execute(f"DELETE FROM {stage}")
                 con.execute(insert_sql(", parallel=false"))
-            n = con.execute(
-                f"SELECT COUNT(*) FROM {table} WHERE program_year = {year}"
-            ).fetchone()[0]
-            con.execute("INSERT INTO _sources VALUES (?, ?, ?, ?, ?, now())",
-                        [table, year, path.name, st.st_size, st.st_mtime])
+            n = con.execute(f"SELECT COUNT(*) FROM {stage}").fetchone()[0]
+            old_n = con.execute(f"SELECT COUNT(*) FROM {table} WHERE program_year = {year}").fetchone()[0] if replacing else 0
+            if n == 0 or (replacing and n < 0.5 * old_n):
+                con.execute(f"DROP TABLE {stage}")
+                raise RuntimeError(f"{table} PY{year}: replacement source {path.name} loaded {n:,} rows "
+                                   f"(existing year has {old_n:,}); keeping the existing data")
+            con.execute("BEGIN TRANSACTION")
+            try:
+                con.execute(f"DELETE FROM {table} WHERE program_year = {year}")
+                con.execute(f"INSERT INTO {table} SELECT * FROM {stage}")
+                con.execute("DELETE FROM _sources WHERE table_name = ? AND program_year = ?", [table, year])
+                con.execute("INSERT INTO _sources VALUES (?, ?, ?, ?, ?, now())",
+                            [table, year, path.name, st.st_size, st.st_mtime])
+                con.execute("COMMIT")
+            except Exception:
+                con.execute("ROLLBACK")
+                raise
+            con.execute(f"DROP TABLE {stage}")
             total += n
             print(f"  {table} PY{year}: {n:,} rows", flush=True)
         counts[table] = total
