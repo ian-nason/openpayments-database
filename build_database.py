@@ -41,6 +41,14 @@ MONEY_COLS = {
     "value_of_interest_usdollars",
 }
 INT_COLS = {"number_of_payments_included_in_total_amount", "program_year"}
+# Columns a source file must map and populate before its year can replace the loaded one:
+# (canonical column, maximum NULL share). A renamed header (unmapped -> NULL) or values
+# TRY_CAST cannot parse (-> NULL) fail the gate instead of silently replacing amounts.
+REQUIRED_COLS = {
+    "general_payments": [("record_id", 0.0), ("total_amount_of_payment_usdollars", 0.001), ("date_of_payment", 0.01)],
+    "research_payments": [("record_id", 0.0), ("total_amount_of_payment_usdollars", 0.001)],
+    "ownership_payments": [("record_id", 0.0), ("total_amount_invested_usdollars", 0.01)],
+}
 
 TABLE_DESCRIPTIONS = {
     "general_payments": "General (non-research) payments and transfers of value "
@@ -179,7 +187,7 @@ def load_detail_tables(con, files, cw):
                     exprs.append(f'NULL AS "{c}"')
             def insert_sql(extra: str) -> str:
                 return f"""
-                    INSERT INTO {stage}
+                    INSERT INTO {stage} BY NAME
                     SELECT {", ".join(exprs)}, '{path.name}' AS source_file
                     FROM read_csv('{path}', header=true, all_varchar=true,
                                   ignore_errors=true, null_padding=true,
@@ -194,14 +202,26 @@ def load_detail_tables(con, files, cw):
                 con.execute(insert_sql(", parallel=false"))
             n = con.execute(f"SELECT COUNT(*) FROM {stage}").fetchone()[0]
             old_n = con.execute(f"SELECT COUNT(*) FROM {table} WHERE program_year = {year}").fetchone()[0] if replacing else 0
+            problems = []
             if n == 0 or (replacing and n < 0.5 * old_n):
+                problems.append(f"loaded {n:,} rows (existing year has {old_n:,})")
+            for col, max_null in REQUIRED_COLS.get(table, []):
+                if col not in canon:
+                    continue
+                if col not in by_canon:
+                    problems.append(f"required column {col} is not in the source header")
+                    continue
+                nulls = con.execute(f'SELECT COUNT(*) FILTER (WHERE "{col}" IS NULL) FROM {stage}').fetchone()[0]
+                if n and nulls / n > max_null:
+                    problems.append(f"{col}: {nulls:,} of {n:,} rows NULL after parsing (limit {max_null:.1%})")
+            if problems:
                 con.execute(f"DROP TABLE {stage}")
-                raise RuntimeError(f"{table} PY{year}: replacement source {path.name} loaded {n:,} rows "
-                                   f"(existing year has {old_n:,}); keeping the existing data")
+                raise RuntimeError(f"{table} PY{year}: replacement source {path.name} rejected: " + "; ".join(problems)
+                                   + "; keeping the existing data")
             con.execute("BEGIN TRANSACTION")
             try:
                 con.execute(f"DELETE FROM {table} WHERE program_year = {year}")
-                con.execute(f"INSERT INTO {table} SELECT * FROM {stage}")
+                con.execute(f"INSERT INTO {table} BY NAME SELECT * FROM {stage}")
                 con.execute("DELETE FROM _sources WHERE table_name = ? AND program_year = ?", [table, year])
                 con.execute("INSERT INTO _sources VALUES (?, ?, ?, ?, ?, now())",
                             [table, year, path.name, st.st_size, st.st_mtime])
